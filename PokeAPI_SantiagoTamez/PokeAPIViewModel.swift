@@ -10,26 +10,34 @@ import Foundation
 @Observable
 @MainActor
 class PokeAPIViewModel {
-    
+
     var arrPokemon = [PokeAPI]()
-    
+    var isLoading = false
+    var errorMessage: String? = nil
+
     init() {
         Task {
             await loadAPI()
         }
     }
-    
+
     func loadAPI() async {
+        isLoading = true
+        errorMessage = nil
+        arrPokemon.removeAll()
+
         guard let url = URL(string: "https://pokeapi.co/api/v2/pokemon?limit=20") else {
-            print("Invalid URL")
+            errorMessage = "Invalid API URL."
+            isLoading = false
             return
         }
 
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
 
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-                print("Invalid response")
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                errorMessage = "Server error. Please try again later."
+                isLoading = false
                 return
             }
 
@@ -40,10 +48,12 @@ class PokeAPIViewModel {
             }
 
         } catch {
-            print("Failed to fetch list: \(error)")
+            handleNetworkError(error)
         }
+
+        isLoading = false
     }
-    
+
     func fetchPokemonDetail(from urlString: String) async {
         guard let url = URL(string: urlString) else {
             print("Invalid Pokémon URL: \(urlString)")
@@ -52,7 +62,8 @@ class PokeAPIViewModel {
 
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
                 print("Failed to load Pokémon detail")
                 return
             }
@@ -62,7 +73,25 @@ class PokeAPIViewModel {
             arrPokemon.append(pokemon)
 
         } catch {
-            print("Failed to decode Pokémon: \(error)")
+            print("Failed to decode Pokémon detail: \(error.localizedDescription)")
         }
     }
+
+    func handleNetworkError(_ error: Error) {
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .notConnectedToInternet:
+                errorMessage = "No internet connection. Please try again."
+            case .timedOut:
+                errorMessage = "The request timed out. Try again later."
+            default:
+                errorMessage = "Network error: \(urlError.localizedDescription)"
+            }
+        } else {
+            errorMessage = "Unexpected error: \(error.localizedDescription)"
+        }
+
+        isLoading = false
+    }
 }
+
